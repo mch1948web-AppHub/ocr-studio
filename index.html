@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手寫辨識工具 · OCR Studio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0f0f11;
+    --surface: #1a1a1f;
+    --surface2: #22222a;
+    --surface3: #2a2a35;
+    --border: #33333f;
+    --accent: #7c6af7;
+    --accent2: #4ecdc4;
+    --accent3: #ff6b6b;
+    --text: #e8e8f0;
+    --text2: #9090a8;
+    --text3: #5a5a70;
+    --success: #4ade80;
+    --warning: #fbbf24;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 56px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .logo span { color: var(--accent2); }
+
+  .header-center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    max-width: 480px;
+  }
+
+  .api-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .api-input:focus { border-color: var(--accent); }
+  .api-input::placeholder { color: var(--text3); }
+
+  .api-status {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text3);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .api-status.ok { background: var(--success); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover:not(:disabled) { background: #6a58e5; }
+
+  .btn-success {
+    background: var(--success);
+    color: #0f1f0f;
+    font-weight: 700;
+  }
+  .btn-success:hover:not(:disabled) { background: #22c55e; }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .badge {
+    background: var(--accent3);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 99px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* ── Main Layout ── */
+  .main {
+    display: grid;
+    grid-template-columns: 200px 1fr 320px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Left Panel: File List ── */
+  .panel-left {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-title {
+    padding: 12px 16px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text3);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .upload-zone {
+    margin: 12px;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 16px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface2);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(124,106,247,0.08); }
+  .upload-zone p { font-size: 11px; color: var(--text3); line-height: 1.5; }
+  .upload-zone strong { color: var(--accent); font-size: 12px; }
+
+  #fileInput { display: none; }
+
+  .file-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px 8px;
+  }
+
+  .file-list::-webkit-scrollbar { width: 4px; }
+  .file-list::-webkit-scrollbar-track { background: transparent; }
+  .file-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+    margin-bottom: 2px;
+  }
+  .file-item:hover { background: var(--surface2); }
+  .file-item.active { background: rgba(124,106,247,0.15); border-color: rgba(124,106,247,0.3); }
+
+  .file-thumb {
+    width: 36px; height: 36px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface3);
+  }
+
+  .file-info { flex: 1; min-width: 0; }
+  .file-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .file-meta { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+  .file-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--border);
+  }
+  .file-dot.done { background: var(--success); }
+  .file-dot.partial { background: var(--warning); }
+
+  /* ── Center Panel: Canvas ── */
+  .panel-center {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+    position: relative;
+  }
+
+  .canvas-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .toolbar-divider {
+    width: 1px; height: 20px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+
+  .tool-btn {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .tool-btn.active { background: rgba(124,106,247,0.2); border-color: var(--accent); color: var(--accent); }
+
+  .canvas-wrap {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+  }
+
+  #canvas-container {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text3);
+    height: 100%;
+  }
+
+  .empty-icon { font-size: 48px; opacity: 0.3; }
+  .empty-state p { font-size: 13px; }
+
+  /* ── Right Panel: Results ── */
+  .panel-right {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .regions-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .regions-list::-webkit-scrollbar { width: 4px; }
+  .regions-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .region-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+  }
+  .region-card:hover { border-color: var(--accent); }
+  .region-card.recognizing { border-color: var(--accent); animation: pulse 1.2s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { border-color: var(--accent); }
+    50% { border-color: rgba(124,106,247,0.3); }
+  }
+
+  .region-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+
+  .region-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    font-weight: 700;
+    background: rgba(124,106,247,0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .region-label-input {
+    flex: 1;
+    background: var(--surface3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: var(--text);
+    font-size: 11px;
+    outline: none;
+    font-family: 'Noto Sans TC', sans-serif;
+    transition: border-color 0.2s;
+    min-width: 0;
+  }
+  .region-label-input:focus { border-color: var(--accent); }
+  .region-label-input::placeholder { color: var(--text3); }
+
+  .region-del {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .region-del:hover { background: rgba(255,107,107,0.15); color: var(--accent3); }
+
+  .region-preview {
+    width: 100%;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: var(--surface3);
+    display: block;
+  }
+
+  .region-result {
+    background: var(--surface3);
+    border-radius: 6px;
+    padding: 8px;
+    min-height: 36px;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .region-result textarea {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    resize: none;
+    outline: none;
+    font-family: 'Noto Sans TC', sans-serif;
+    line-height: 1.5;
+  }
+
+  .region-result .placeholder-text {
+    color: var(--text3);
+    font-size: 11px;
+    font-style: italic;
+  }
+
+  .recognize-btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 6px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(124,106,247,0.2);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .recognize-btn:hover { background: rgba(124,106,247,0.35); }
+  .recognize-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .spinner {
+    width: 12px; height: 12px;
+    border: 2px solid rgba(124,106,247,0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .spinner.active { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Bottom action bar in right panel */
+  .panel-actions {
+    padding: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .confirm-bar {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ── Data Table Preview ── */
+  .data-panel {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    max-height: 260px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+  }
+  .data-panel.open { transform: translateY(0); }
+
+  .data-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .data-table-wrap {
+    overflow: auto;
+    flex: 1;
+  }
+
+  .data-table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  .data-table th {
+    background: var(--surface2);
+    color: var(--text3);
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    position: sticky;
+    top: 0;
+  }
+  .data-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(51,51,63,0.5);
+    border-right: 1px solid rgba(51,51,63,0.5);
+    color: var(--text);
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .data-table tr:hover td { background: var(--surface2); }
+
+  .data-table td:first-child { color: var(--text2); font-family: 'Space Mono', monospace; font-size: 10px; }
+
+  /* Toast */
+  .toast-wrap {
+    position: fixed;
+    top: 70px; right: 16px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .toast {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text);
+    min-width: 200px;
+    max-width: 300px;
+    animation: toastIn 0.3s ease;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toast.success { border-color: var(--success); }
+  .toast.error { border-color: var(--accent3); }
+  @keyframes toastIn { from { opacity:0; transform: translateX(20px); } }
+
+  /* Instruction overlay for canvas */
+  .canvas-hint {
+    position: absolute;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15,15,17,0.85);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 11px;
+    color: var(--text3);
+    pointer-events: none;
+    white-space: nowrap;
+    backdrop-filter: blur(8px);
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--surface3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+
+  .stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 16px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text3);
+    flex-shrink: 0;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .no-regions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text3);
+    padding: 32px 16px;
+    text-align: center;
+    font-size: 12px;
+  }
+  .no-regions-icon { font-size: 28px; opacity: 0.4; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">OCR<span>Studio</span></div>
+  <div class="header-center">
+    <div class="api-status" id="apiStatus"></div>
+    <input class="api-input" type="password" id="apiKey"
+      placeholder="輸入 Anthropic API Key (sk-ant-...)"
+      autocomplete="off">
+  </div>
+  <div class="header-right">
+    <button class="btn btn-outline" id="toggleDataBtn" disabled>
+      📊 預覽資料 <span class="badge" id="rowBadge">0</span>
+    </button>
+    <button class="btn btn-success" id="exportBtn" disabled>
+      ⬇ 匯出 Excel
+    </button>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Left: File list -->
+  <div class="panel-left">
+    <div class="panel-title">
+      照片清單
+      <span id="fileCount" style="font-size:10px;color:var(--text2)">0 張</span>
+    </div>
+
+    <div class="upload-zone" id="uploadZone">
+      <p><strong>點擊或拖曳</strong><br>上傳照片（可多選）</p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <!-- Center: Canvas -->
+  <div class="panel-center">
+    <div class="canvas-toolbar">
+      <div class="toolbar-group">
+        <button class="tool-btn active" id="toolRect" title="矩形圈選">⬜</button>
+        <button class="tool-btn" id="toolMove" title="移動/選取">✥</button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button class="tool-btn" id="zoomIn" title="放大">🔍+</button>
+        <button class="tool-btn" id="zoomOut" title="縮小">🔍−</button>
+        <button class="tool-btn" id="zoomReset" title="重設">⊡</button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button class="tool-btn" id="clearRects" title="清除圈選">🗑</button>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" id="recognizeAllBtn" disabled>
+        <span class="spinner" id="recAllSpinner"></span>
+        ✦ 辨識全部區域
+      </button>
+    </div>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🖼</div>
+        <p>請先從左側上傳並選取照片</p>
+      </div>
+      <div id="canvas-container" style="display:none">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+    </div>
+    <div class="canvas-hint" id="canvasHint" style="display:none">
+      拖曳圈選區域 · 右側輸入欄位名稱後辨識
+    </div>
+  </div>
+
+  <!-- Right: Regions -->
+  <div class="panel-right">
+    <div class="panel-title">
+      圈選區域
+      <span id="regionCount" style="color:var(--text2)">0 個</span>
+    </div>
+
+    <div class="regions-list" id="regionsList">
+      <div class="no-regions">
+        <div class="no-regions-icon">⬜</div>
+        <span>在照片上拖曳圈選區域<br>即可開始辨識</span>
+      </div>
+    </div>
+
+    <div class="panel-actions">
+      <div style="font-size:10px;color:var(--text3);padding:0 2px">
+        進度：<span id="progressText">0 / 0</span>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div class="confirm-bar">
+        <button class="btn btn-outline" id="clearPageBtn" style="flex:1">清除此頁</button>
+        <button class="btn btn-primary" id="confirmPageBtn" style="flex:2" disabled>
+          ✓ 確認加入清單
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Data Preview Panel -->
+<div class="data-panel" id="dataPanel">
+  <div class="data-panel-header">
+    <span style="font-size:12px;font-weight:600">資料預覽</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--text3)" id="dataStats"></span>
+      <button class="btn btn-outline" style="padding:4px 10px;font-size:11px" id="closeDataBtn">✕ 關閉</button>
+    </div>
+  </div>
+  <div class="data-table-wrap">
+    <table class="data-table" id="dataTable">
+      <thead><tr id="tableHead"></tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────
+let files = [];           // { file, url, thumb, regions, confirmed }
+let currentIdx = -1;
+let fabricCanvas = null;
+let isDrawing = false;
+let startPoint = null;
+let drawingRect = null;
+let mode = 'rect';        // 'rect' | 'move'
+let zoom = 1;
+
+// regions per image: [{ id, label, rect:{x,y,w,h}, previewUrl, result }]
+let allData = [];         // confirmed rows: [{filename, ...fields}]
+let allColumns = new Set(['檔名']);
+
+// ── DOM refs ──────────────────────────────────────────
+const apiKeyInput   = document.getElementById('apiKey');
+const apiStatus     = document.getElementById('apiStatus');
+const fileInput     = document.getElementById('fileInput');
+const uploadZone    = document.getElementById('uploadZone');
+const fileListEl    = document.getElementById('fileList');
+const fileCountEl   = document.getElementById('fileCount');
+const emptyState    = document.getElementById('emptyState');
+const canvasContainer = document.getElementById('canvas-container');
+const canvasEl      = document.getElementById('mainCanvas');
+const regionsList   = document.getElementById('regionsList');
+const regionCount   = document.getElementById('regionCount');
+const rowBadge      = document.getElementById('rowBadge');
+const exportBtn     = document.getElementById('exportBtn');
+const toggleDataBtn = document.getElementById('toggleDataBtn');
+const dataPanel     = document.getElementById('dataPanel');
+const dataStats     = document.getElementById('dataStats');
+const tableHead     = document.getElementById('tableHead');
+const tableBody     = document.getElementById('tableBody');
+const confirmPageBtn = document.getElementById('confirmPageBtn');
+const clearPageBtn  = document.getElementById('clearPageBtn');
+const recognizeAllBtn = document.getElementById('recognizeAllBtn');
+const recAllSpinner = document.getElementById('recAllSpinner');
+const progressText  = document.getElementById('progressText');
+const progressFill  = document.getElementById('progressFill');
+const canvasHint    = document.getElementById('canvasHint');
+
+// ── API Key ───────────────────────────────────────────
+apiKeyInput.addEventListener('input', () => {
+  const v = apiKeyInput.value.trim();
+  apiStatus.className = 'api-status' + (v.startsWith('sk-ant-') ? ' ok' : '');
+});
+
+function getApiKey() { return apiKeyInput.value.trim(); }
+
+// ── Upload ────────────────────────────────────────────
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => addFiles([...e.target.files]));
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag');
+  addFiles([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
+});
+
+function addFiles(newFiles) {
+  newFiles.forEach(f => {
+    const url = URL.createObjectURL(f);
+    files.push({ file: f, url, thumb: url, regions: [], confirmed: false });
+  });
+  renderFileList();
+  if (currentIdx < 0 && files.length > 0) switchTo(0);
+}
+
+function renderFileList() {
+  fileCountEl.textContent = `${files.length} 張`;
+  fileListEl.innerHTML = '';
+  files.forEach((f, i) => {
+    const dot = f.confirmed ? 'done' : (f.regions.length > 0 ? 'partial' : '');
+    fileListEl.innerHTML += `
+      <div class="file-item ${i === currentIdx ? 'active' : ''}" onclick="switchTo(${i})">
+        <img class="file-thumb" src="${f.thumb}" alt="">
+        <div class="file-info">
+          <div class="file-name">${f.file.name}</div>
+          <div class="file-meta">${f.regions.length} 個區域</div>
+        </div>
+        <div class="file-dot ${dot}"></div>
+      </div>`;
+  });
+}
+
+// ── Switch image ──────────────────────────────────────
+function switchTo(idx) {
+  currentIdx = idx;
+  const f = files[idx];
+  emptyState.style.display = 'none';
+  canvasContainer.style.display = 'inline-block';
+  canvasHint.style.display = 'block';
+  loadImageToCanvas(f.url, f.regions);
+  renderFileList();
+  renderRegions();
+}
+
+// ── Fabric Canvas ─────────────────────────────────────
+function loadImageToCanvas(url, savedRegions) {
+  if (fabricCanvas) { fabricCanvas.dispose(); }
+
+  const wrap = document.getElementById('canvasWrap');
+  const maxW = wrap.clientWidth - 48;
+  const maxH = wrap.clientHeight - 48;
+
+  const img = new Image();
+  img.onload = () => {
+    let w = img.width, h = img.height;
+    const ratio = Math.min(maxW / w, maxH / h, 1);
+    w = Math.round(w * ratio); h = Math.round(h * ratio);
+    zoom = ratio;
+
+    canvasEl.width = w; canvasEl.height = h;
+
+    fabricCanvas = new fabric.Canvas('mainCanvas', {
+      selection: false,
+      width: w, height: h,
+    });
+
+    fabric.Image.fromURL(url, fImg => {
+      fImg.scaleToWidth(w);
+      fImg.set({ selectable: false, evented: false, hasBorders: false });
+      fabricCanvas.add(fImg);
+      fabricCanvas.sendToBack(fImg);
+
+      // Restore regions
+      savedRegions.forEach(r => {
+        drawRegionRect(r);
+      });
+
+      fabricCanvas.renderAll();
+    });
+
+    setupCanvasEvents();
+    updateToolbarState();
+  };
+  img.src = url;
+}
+
+function setupCanvasEvents() {
+  fabricCanvas.off('mouse:down');
+  fabricCanvas.off('mouse:move');
+  fabricCanvas.off('mouse:up');
+
+  fabricCanvas.on('mouse:down', opt => {
+    if (mode !== 'rect') return;
+    const p = fabricCanvas.getPointer(opt.e);
+    isDrawing = true;
+    startPoint = p;
+    drawingRect = new fabric.Rect({
+      left: p.x, top: p.y, width: 0, height: 0,
+      fill: 'rgba(124,106,247,0.1)',
+      stroke: '#7c6af7',
+      strokeWidth: 2,
+      selectable: false,
+      evented: false,
+      strokeDashArray: [6, 3],
+    });
+    fabricCanvas.add(drawingRect);
+  });
+
+  fabricCanvas.on('mouse:move', opt => {
+    if (!isDrawing || !drawingRect) return;
+    const p = fabricCanvas.getPointer(opt.e);
+    const x = Math.min(p.x, startPoint.x);
+    const y = Math.min(p.y, startPoint.y);
+    const w = Math.abs(p.x - startPoint.x);
+    const h = Math.abs(p.y - startPoint.y);
+    drawingRect.set({ left: x, top: y, width: w, height: h });
+    fabricCanvas.renderAll();
+  });
+
+  fabricCanvas.on('mouse:up', opt => {
+    if (!isDrawing || !drawingRect) return;
+    isDrawing = false;
+    const r = drawingRect;
+    const w = r.width, h = r.height;
+    if (w < 10 || h < 10) {
+      fabricCanvas.remove(r);
+      drawingRect = null;
+      return;
+    }
+    // Remove dashed rect, create confirmed one
+    fabricCanvas.remove(r);
+    drawingRect = null;
+
+    const region = {
+      id: Date.now(),
+      label: '',
+      rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(w), h: Math.round(h) },
+      previewUrl: cropRegion(r.left, r.top, w, h),
+      result: '',
+    };
+    files[currentIdx].regions.push(region);
+    drawRegionRect(region);
+    fabricCanvas.renderAll();
+    renderRegions();
+    renderFileList();
+  });
+}
+
+function drawRegionRect(region) {
+  const r = region.rect;
+  const rect = new fabric.Rect({
+    left: r.x, top: r.y, width: r.w, height: r.h,
+    fill: 'rgba(78,205,196,0.08)',
+    stroke: '#4ecdc4',
+    strokeWidth: 1.5,
+    selectable: false,
+    evented: false,
+    data: { regionId: region.id },
+  });
+  const label = new fabric.Text(`#${files[currentIdx]?.regions.findIndex(rr => rr.id === region.id) + 1 || ''}`, {
+    left: r.x + 4, top: r.y + 2,
+    fontSize: 11,
+    fill: '#4ecdc4',
+    fontFamily: 'Space Mono, monospace',
+    selectable: false, evented: false,
+    data: { regionId: region.id, isLabel: true },
+  });
+  fabricCanvas.add(rect, label);
+}
+
+function cropRegion(x, y, w, h) {
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const ctx = tmp.getContext('2d');
+  const lowerCanvas = fabricCanvas.lowerCanvasEl;
+  ctx.drawImage(lowerCanvas, x, y, w, h, 0, 0, w, h);
+  return tmp.toDataURL('image/jpeg', 0.92);
+}
+
+// ── Toolbar buttons ───────────────────────────────────
+document.getElementById('toolRect').addEventListener('click', () => {
+  mode = 'rect';
+  document.getElementById('toolRect').classList.add('active');
+  document.getElementById('toolMove').classList.remove('active');
+  if (fabricCanvas) fabricCanvas.selection = false;
+});
+document.getElementById('toolMove').addEventListener('click', () => {
+  mode = 'move';
+  document.getElementById('toolMove').classList.add('active');
+  document.getElementById('toolRect').classList.remove('active');
+  if (fabricCanvas) fabricCanvas.selection = true;
+});
+document.getElementById('zoomIn').addEventListener('click', () => {
+  if (!fabricCanvas) return;
+  fabricCanvas.setZoom(fabricCanvas.getZoom() * 1.2);
+  fabricCanvas.setDimensions({
+    width: fabricCanvas.getWidth() * 1.2,
+    height: fabricCanvas.getHeight() * 1.2,
+  });
+});
+document.getElementById('zoomOut').addEventListener('click', () => {
+  if (!fabricCanvas) return;
+  fabricCanvas.setZoom(fabricCanvas.getZoom() / 1.2);
+  fabricCanvas.setDimensions({
+    width: fabricCanvas.getWidth() / 1.2,
+    height: fabricCanvas.getHeight() / 1.2,
+  });
+});
+document.getElementById('zoomReset').addEventListener('click', () => {
+  if (!fabricCanvas) return;
+  location.reload(); // simple reset: reload current image
+});
+document.getElementById('clearRects').addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  files[currentIdx].regions = [];
+  if (fabricCanvas) {
+    const f = files[currentIdx];
+    fabricCanvas.dispose();
+    loadImageToCanvas(f.url, []);
+  }
+  renderRegions();
+  renderFileList();
+});
+
+function updateToolbarState() {
+  const hasRegions = currentIdx >= 0 && files[currentIdx]?.regions.length > 0;
+  recognizeAllBtn.disabled = !hasRegions || !getApiKey();
+  confirmPageBtn.disabled = !hasRegions;
+}
+
+// ── Regions panel ─────────────────────────────────────
+function renderRegions() {
+  if (currentIdx < 0) return;
+  const regions = files[currentIdx].regions;
+  regionCount.textContent = `${regions.length} 個`;
+
+  if (regions.length === 0) {
+    regionsList.innerHTML = `
+      <div class="no-regions">
+        <div class="no-regions-icon">⬜</div>
+        <span>在照片上拖曳圈選區域<br>即可開始辨識</span>
+      </div>`;
+    updateToolbarState();
+    return;
+  }
+
+  const done = regions.filter(r => r.result).length;
+  progressText.textContent = `${done} / ${regions.length}`;
+  const pct = regions.length ? (done / regions.length * 100) : 0;
+  progressFill.style.width = pct + '%';
+
+  regionsList.innerHTML = regions.map((r, i) => `
+    <div class="region-card" id="rcard-${r.id}">
+      <div class="region-header">
+        <span class="region-num">#${i + 1}</span>
+        <input class="region-label-input" type="text"
+          placeholder="欄位名稱（如：姓名）"
+          value="${r.label}"
+          onchange="updateLabel(${r.id}, this.value)"
+          oninput="updateLabel(${r.id}, this.value)">
+        <button class="region-del" onclick="deleteRegion(${r.id})">✕</button>
+      </div>
+      <img class="region-preview" src="${r.previewUrl}" alt="區域預覽">
+      <div class="region-result">
+        ${r.result
+          ? `<textarea rows="2" style="min-height:36px" onchange="updateResult(${r.id}, this.value)">${r.result}</textarea>`
+          : `<span class="placeholder-text">尚未辨識…</span>`}
+      </div>
+      <button class="recognize-btn" id="rbtn-${r.id}"
+        onclick="recognizeSingle(${r.id})"
+        ${!getApiKey() ? 'disabled' : ''}>
+        <span class="spinner" id="rspinner-${r.id}"></span>
+        ✦ 辨識此區域
+      </button>
+    </div>`).join('');
+
+  updateToolbarState();
+}
+
+function updateLabel(id, val) {
+  const r = findRegion(id);
+  if (r) r.label = val;
+}
+function updateResult(id, val) {
+  const r = findRegion(id);
+  if (r) r.result = val;
+}
+function findRegion(id) {
+  if (currentIdx < 0) return null;
+  return files[currentIdx].regions.find(r => r.id === id);
+}
+function deleteRegion(id) {
+  if (currentIdx < 0) return;
+  files[currentIdx].regions = files[currentIdx].regions.filter(r => r.id !== id);
+  // Redraw canvas
+  const f = files[currentIdx];
+  fabricCanvas.dispose();
+  loadImageToCanvas(f.url, f.regions);
+  renderRegions();
+  renderFileList();
+}
+
+// ── OCR ───────────────────────────────────────────────
+async function callClaude(base64img, label) {
+  const key = getApiKey();
+  if (!key) throw new Error('請輸入 API Key');
+
+  const prompt = label
+    ? `請辨識這張圖片裡的手寫文字。這個區域代表的欄位是「${label}」。請只輸出辨識到的文字內容，不要加任何說明或標點符號以外的額外文字。如果辨識不到文字，回傳空字串。`
+    : '請辨識這張圖片裡的手寫文字。請只輸出辨識到的文字內容，不要加任何說明。如果辨識不到文字，回傳空字串。';
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-5',
+      max_tokens: 256,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64img.split(',')[1] } },
+          { type: 'text', text: prompt },
+        ]
+      }]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API 錯誤 ${res.status}`);
+  }
+  const data = await res.json();
+  return data.content?.[0]?.text?.trim() || '';
+}
+
+async function recognizeSingle(id) {
+  const r = findRegion(id);
+  if (!r) return;
+  const btn = document.getElementById(`rbtn-${id}`);
+  const spinner = document.getElementById(`rspinner-${id}`);
+  const card = document.getElementById(`rcard-${id}`);
+
+  btn.disabled = true;
+  spinner.classList.add('active');
+  card.classList.add('recognizing');
+
+  try {
+    r.result = await callClaude(r.previewUrl, r.label);
+    showToast(`✓ 辨識完成：${r.result || '（空）'}`, 'success');
+  } catch (e) {
+    showToast(`✕ 辨識失敗：${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    spinner.classList.remove('active');
+    card.classList.remove('recognizing');
+    renderRegions();
+  }
+}
+
+recognizeAllBtn.addEventListener('click', async () => {
+  if (currentIdx < 0) return;
+  const regions = files[currentIdx].regions;
+  if (!regions.length) return;
+
+  recognizeAllBtn.disabled = true;
+  recAllSpinner.classList.add('active');
+
+  for (const r of regions) {
+    const btn = document.getElementById(`rbtn-${r.id}`);
+    const spinner = document.getElementById(`rspinner-${r.id}`);
+    const card = document.getElementById(`rcard-${r.id}`);
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.classList.add('active');
+    if (card) card.classList.add('recognizing');
+    try {
+      r.result = await callClaude(r.previewUrl, r.label);
+    } catch (e) {
+      showToast(`✕ ${e.message}`, 'error');
+    }
+    if (card) card.classList.remove('recognizing');
+    if (spinner) spinner.classList.remove('active');
+    renderRegions();
+  }
+
+  recAllSpinner.classList.remove('active');
+  recognizeAllBtn.disabled = false;
+  showToast('✓ 全部辨識完成', 'success');
+});
+
+// ── Confirm page ──────────────────────────────────────
+confirmPageBtn.addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  const f = files[currentIdx];
+  const row = { '檔名': f.file.name };
+  f.regions.forEach(r => {
+    const col = r.label || `區域${f.regions.indexOf(r)+1}`;
+    row[col] = r.result || '';
+    allColumns.add(col);
+  });
+  // Update if already confirmed
+  const existing = allData.findIndex(d => d['檔名'] === f.file.name);
+  if (existing >= 0) allData[existing] = row;
+  else allData.push(row);
+
+  f.confirmed = true;
+  renderFileList();
+  updateExportState();
+  showToast(`✓ 已加入清單（共 ${allData.length} 筆）`, 'success');
+
+  // Auto move to next
+  const nextUnconfirmed = files.findIndex((ff, i) => i > currentIdx && !ff.confirmed);
+  if (nextUnconfirmed >= 0) switchTo(nextUnconfirmed);
+});
+
+clearPageBtn.addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  files[currentIdx].regions = [];
+  fabricCanvas.dispose();
+  loadImageToCanvas(files[currentIdx].url, []);
+  renderRegions();
+  renderFileList();
+});
+
+function updateExportState() {
+  const has = allData.length > 0;
+  exportBtn.disabled = !has;
+  toggleDataBtn.disabled = !has;
+  rowBadge.textContent = allData.length;
+}
+
+// ── Data panel ────────────────────────────────────────
+toggleDataBtn.addEventListener('click', () => dataPanel.classList.toggle('open'));
+document.getElementById('closeDataBtn').addEventListener('click', () => dataPanel.classList.remove('open'));
+
+function renderDataTable() {
+  const cols = ['檔名', ...Array.from(allColumns).filter(c => c !== '檔名')];
+  tableHead.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+  tableBody.innerHTML = allData.map(row =>
+    `<tr>${cols.map(c => `<td title="${row[c]||''}">${row[c]||''}</td>`).join('')}</tr>`
+  ).join('');
+  dataStats.textContent = `${allData.length} 列 × ${cols.length} 欄`;
+}
+
+toggleDataBtn.addEventListener('click', renderDataTable);
+
+// ── Export Excel ──────────────────────────────────────
+exportBtn.addEventListener('click', () => {
+  const cols = ['檔名', ...Array.from(allColumns).filter(c => c !== '檔名')];
+  const wsData = [cols, ...allData.map(row => cols.map(c => row[c] || ''))];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Column widths
+  ws['!cols'] = cols.map(c => ({ wch: Math.max(c.length * 2, 12) }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '辨識結果');
+  XLSX.writeFile(wb, `OCR結果_${new Date().toLocaleDateString('zh-TW').replace(/\//g,'-')}.xlsx`);
+  showToast('✓ Excel 已下載', 'success');
+});
+
+// ── Toast ─────────────────────────────────────────────
+function showToast(msg, type='') {
+  const wrap = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── Init ───────────────────────────────────────────────
+updateExportState();
+</script>
+</body>
+</html>
