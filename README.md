@@ -1,0 +1,2 @@
+# ocr-studio
+ScanOCR
